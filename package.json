@@ -1,0 +1,26 @@
+{
+  "name": "tiny-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Minimal GLM agent harness on @earendil-works/pi-agent-core — file tools only, no shell, TypeScript-only (runs on Node type stripping).",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.ts",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "selfcheck": "node --disable-warning=ExperimentalWarning src/selfcheck.ts",
+    "e2e": "node --disable-warning=ExperimentalWarning src/e2e-faux.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^1.5.2",
+    "@earendil-works/pi-ai": "^1.5.2",
+    "@earendil-works/pi-schema": "^1.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26",
+    "typescript": "^5.9"
+  }
+}
