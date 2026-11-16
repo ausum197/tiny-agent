@@ -1,6 +1,5 @@
 import process from "node:process";
 import type { Agent, AgentEvent } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 const DIM = "\x1b[2m";
 const RESET = "\x1b[22m";
@@ -23,15 +22,9 @@ function compactArgs(args: unknown): string {
   return parts.join(" ");
 }
 
-function formatUsage(message: AssistantMessage): string {
-  const usage = message.usage;
-  const bits: string[] = [
-    `in ${usage.input}`,
-    `out ${usage.output}${usage.reasoning !== undefined ? ` (think ${usage.reasoning})` : ""}`,
-  ];
-  if (usage.cacheRead > 0) bits.push(`cache read ${usage.cacheRead}`);
-  if (usage.cacheWrite > 0) bits.push(`cache write ${usage.cacheWrite}`);
-  return bits.join(", ");
+/** Seconds with one decimal, e.g. "3.2s". */
+function formatSeconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 /**
@@ -39,6 +32,7 @@ function formatUsage(message: AssistantMessage): string {
  */
 export function attachDisplay(agent: Agent, tty: boolean = process.stdout.isTTY === true): void {
   let dirty = false; // a delta was printed without trailing newline
+  let turnStartedAt: number | null = null;
 
   const closeLine = (): void => {
     if (dirty) {
@@ -51,11 +45,7 @@ export function attachDisplay(agent: Agent, tty: boolean = process.stdout.isTTY 
     switch (event.type) {
       case "message_update": {
         const e = event.assistantMessageEvent;
-        if (e.type === "thinking_delta") {
-          if (!dirty) process.stdout.write(color(tty, DIM, "… "));
-          process.stdout.write(color(tty, DIM, e.delta));
-          dirty = true;
-        } else if (e.type === "text_delta") {
+        if (e.type === "text_delta") {
           process.stdout.write(e.delta);
           dirty = true;
         }
@@ -75,16 +65,20 @@ export function attachDisplay(agent: Agent, tty: boolean = process.stdout.isTTY 
       }
       case "tool_execution_end": {
         const mark = event.isError ? color(tty, RED, "✗") : color(tty, GREEN, "✓");
-        const duration = event.durationMs !== undefined ? color(tty, DIM, ` (${event.durationMs}ms)`) : "";
+        const duration =
+          event.durationMs !== undefined ? color(tty, DIM, ` (${formatSeconds(event.durationMs)})`) : "";
         process.stdout.write(`${mark}${duration}\n`);
+        break;
+      }
+      case "turn_start": {
+        turnStartedAt = Date.now();
         break;
       }
       case "turn_end": {
         closeLine();
-        const message = event.message;
-        if (message.role === "assistant") {
-          process.stdout.write(`\n${color(tty, DIM, `· ${formatUsage(message)}`)}\n`);
-        }
+        const elapsed = turnStartedAt !== null ? color(tty, DIM, formatSeconds(Date.now() - turnStartedAt)) : "";
+        turnStartedAt = null;
+        if (elapsed) process.stdout.write(`\n${elapsed}\n`);
         break;
       }
       case "agent_end": {

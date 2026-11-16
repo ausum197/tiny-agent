@@ -3,6 +3,9 @@ import { boot } from "./agent.ts";
 import { attachDisplay } from "./display.ts";
 import { HELP, loadDotEnv, parseArgs } from "./config.ts";
 import { runRepl } from "./repl.ts";
+import { snapshotRun } from "./snapshots.ts";
+import { Sidecar, sidecarApiKey } from "./sidecar.ts";
+import { createPlanDrafter } from "./agent.ts";
 
 async function readStdinPrompt(): Promise<string | undefined> {
   if (process.stdin.isTTY) return undefined;
@@ -26,13 +29,22 @@ async function main(): Promise<void> {
   const prompt = cfg.prompt ?? (await readStdinPrompt());
 
   const { agent, provider } = boot(cfg);
-  attachDisplay(agent);
 
   if (prompt === undefined) {
-    await runRepl(agent, cfg, provider);
+    const key = sidecarApiKey(process.env);
+    const sidecar = cfg.sidecar && key !== undefined ? new Sidecar(key) : undefined;
+    const planDrafter = sidecar !== undefined ? createPlanDrafter(cfg) : undefined;
+    await runRepl(agent, cfg, provider, sidecar, planDrafter); // the TUI renders everything itself
     return;
   }
 
+  attachDisplay(agent); // one-shot mode: plain streaming printer
+
+  try {
+    await snapshotRun(cfg.workspace); // reversibility: pre-run checkpoint
+  } catch {
+    // snapshot failure must not block the run
+  }
   await agent.prompt(prompt);
   await agent.waitForIdle();
 }

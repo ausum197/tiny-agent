@@ -26,9 +26,11 @@ export interface Config {
   workspace: string;
   prompt: string | undefined;
   help: boolean;
+  /** --sidecar: Jev-powered sidecar assertions while composing. */
+  sidecar: boolean;
 }
 
-export const HELP = `tiny-agent — minimal GLM agent harness (file tools only, no shell)
+export const HELP = `tiny-agent — minimal GLM agent harness (sandboxed file tools + script runner, no shell)
 
 Usage:
   tiny-agent                        interactive REPL
@@ -42,12 +44,15 @@ Flags:
       --provider <id>     ${PROVIDER_IDS.join(" | ")}  (default: auto from env keys)
   -t, --thinking <level>  off|minimal|low|medium|high|xhigh|max (default: medium)
   -C, --cwd <dir>         workspace root the tools are sandboxed to (default: cwd)
-  -h, --help              show this help
+      --sidecar           Jev sidecar: completion/intent/route assertions while
+                          you compose, plan-first responses (needs JEV_TOKEN)  -h, --help              show this help
 
 Env:
   ZAI_API_KEY             Z.AI API key (coding plan, global)  -> provider "zai"
   ZAI_CODING_CN_API_KEY   Z.AI API key (coding plan, China)   -> provider "zai-coding-cn"
   TINY_AGENT_MODEL        default model id
+  CONTEXT7_API_KEY        optional, for the docs tools (works keyless, rate-limited)
+  JEV_TOKEN               TypeSafe API key — enables --sidecar (Jev assertions while composing)
 
 REPL commands:
   /help   /model [id]   /tools   /reset   /pwd   /quit
@@ -94,6 +99,7 @@ export function parseArgs(argv: readonly string[]): Config {
   let workspace = process.cwd();
   let prompt: string | undefined;
   let help = false;
+  let sidecar = false;
 
   const positional: string[] = [];
 
@@ -146,6 +152,10 @@ export function parseArgs(argv: readonly string[]): Config {
         workspace = path.resolve(needValue(arg, rest));
         break;
       }
+      case "--sidecar": {
+        sidecar = true;
+        break;
+      }
       case "--": {
         positional.push(...rest);
         rest.length = 0;
@@ -174,5 +184,6 @@ export function parseArgs(argv: readonly string[]): Config {
     workspace,
     prompt,
     help,
+    sidecar,
   };
 }

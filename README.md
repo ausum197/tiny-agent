@@ -3,8 +3,9 @@
 A minimal GLM agent harness built on
 [@earendil-works/pi-agent-core](https://github.com/earendil-works/pi) (pi).
 Pure TypeScript — there is not a single `.js` source file; it runs directly on
-Node ≥ 24 via native type stripping. **No shell tool, by design**: the agent has
-file tools only, no bash/exec/network capabilities anywhere in the codebase.
+Node ≥ 24 via native type stripping. **No shell tool, by design**: no bash/exec,
+no command strings. The agent gets nine sandboxed workspace tools (files, diff,
+fuzzy find, script runner) and two read-only documentation tools.
 
 ## Quickstart
 
@@ -39,20 +40,53 @@ Default: `glm-5.3`. Override with `--model` or `TINY_AGENT_MODEL`.
 ```
 
 REPL commands: `/help`, `/tools`, `/reset`, `/pwd`, `/quit`.
-Ctrl+C aborts the current run; press twice to quit.
+Terminal UI is [ink](https://github.com/vadimdemedes/ink) (the library behind
+Claude Code): finished conversation is printed to your scrollback once and never
+repainted — scroll and search it natively; only the composer area redraws.
+↑/↓ input history · Ctrl+C aborts the current run, twice quits · Ctrl+D exits.
 
-## Tools (all sandboxed to the workspace root)
+## Tools (file tools sandboxed to the workspace root)
 
-| tool         | what it does                                        |
-| ------------ | --------------------------------------------------- |
-| `read_file`  | numbered lines, optional `offset`/`limit`           |
-| `write_file` | create/overwrite, makes parent dirs                 |
-| `edit_file`  | exact-match replace; fails on ambiguity unless `replace_all` |
-| `list_dir`   | recursive listing with depth control                |
-| `glob_files` | `**`-style globbing via `fs.glob`                   |
-| `grep_files` | regex/literal search, `include` glob filter, skips binaries |
+| tool              | what it does                                        |
+| ----------------- | --------------------------------------------------- |
+| `read_file`       | numbered lines, optional `offset`/`limit`           |
+| `write_file`      | create/overwrite, makes parent dirs                 |
+| `edit_file`       | exact-match replace; fails on ambiguity unless `replace_all` |
+| `list_dir`        | recursive listing with depth control                |
+| `glob_files`      | `**`-style globbing via `fs.glob`                   |
+| `grep_files`      | regex/literal search, `include` glob filter, skips binaries |
+| `run_ts`          | run a workspace script on Node under the Permission Model |
+| `diff_files`      | unified diff between two files (Myers O(ND), verify your edits) |
+| `find_files`      | fuzzy ranked file-name search (fzf-style scoring) |
+| `resolve_library` | Context7 lookup: name → `/org/project` ID           |
+| `get_library_docs`| fetch current docs for a Context7 library ID        |
 
 Paths that escape the workspace (`../`, absolute paths outside) are rejected.
+**Symlink-safe**: targets are real-resolved and re-checked, so a symlink inside
+the workspace pointing outside is rejected too (see `src/paths.ts`).
+
+`run_ts` spawns one fixed binary (`process.execPath`) with fixed flags — never a
+shell. The script runs with Node's `--permission` model: fs read/write bounded
+to the workspace, child processes/workers/addons denied, and (Node ≥ 25) network
+denied. It receives a minimal environment (no API keys) and output/timeout caps.
+
+The docs tools are the only network traffic, and it is outbound read-only fetches
+to context7.com. Doc text is untrusted content — the system prompt tells the
+model to treat it as data.
+
+## Sidecar mode (--sidecar)
+
+With `JEV_TOKEN` set (TypeSafe API key), `--sidecar` adds a System One layer:
+
+- While you compose, a debounced Jev request (one speculative fan-out call) rates
+  your draft: completion probability, intent, multi-idea detection, missing-file
+  references, and a queue-vs-steer route recommendation. Assertions appear on the
+  idle status row and retract on the next keystroke.
+- Enter mid-run queues your message for when the agent stops; Shift+Enter steers
+  immediately (kitty-keyboard terminals).
+- Substantive responses open with a short numbered plan (plan handshake).
+
+The main agent is unaffected when the flag is off or the sidecar fails.
 
 ## How it works
 
@@ -95,10 +129,13 @@ src/
   index.ts     entry: args → one-shot or REPL
   config.ts    flags, .env loading, help
   agent.ts     models + Agent wiring, system prompt
-  tools.ts     the six workspace tools
-  display.ts   streaming/tool/usage printer
-  repl.ts      interactive loop
-  paths.ts     workspace sandbox helpers
+  tools.ts     nine workspace tools (files + run_ts + diff/find)
+  context7.ts  resolve_library + get_library_docs (read-only docs)
+  display.ts   one-shot streaming printer (REPL uses pi-tui)
+  repl.ts      interactive loop (ink terminal UI)
+  paths.ts     workspace sandbox helpers (incl. symlink-safe resolveReal)
+  diff.ts      Myers O(ND) line diff + unified formatter
+  fuzzy.ts     fzf-style fuzzy match scoring
   selfcheck.ts offline test of all tools + sandbox
   e2e-faux.ts  offline full agent-loop test (scripted fake model)
 ```
