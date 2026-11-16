@@ -5,13 +5,13 @@ A minimal GLM agent harness built on
 Pure TypeScript, no build step — Node ≥ 24 runs the `.ts` sources directly via
 type stripping. **No shell tool, by design**: no bash/exec, no command strings.
 The agent gets eleven sandboxed tools (files, diff, fuzzy find, script runner,
-docs lookup), a fullscreen terminal UI, and an optional Jev sidecar.
+docs lookup) and a fullscreen terminal UI.
 
 ## Quickstart
 
 ```sh
 npm install
-cp .env.example .env      # ZAI_API_KEY (plus JEV_TOKEN for --sidecar)
+cp .env.example .env      # ZAI_API_KEY
 npm run selfcheck         # offline tool + sandbox test, no key needed
 npm start                 # interactive REPL (default model: glm-5.3)
 npm start -- "fix the typo in notes/hello.txt"   # one-shot
@@ -19,7 +19,7 @@ npm start -- "fix the typo in notes/hello.txt"   # one-shot
 
 Model: `glm-5.3` by default; override with `--model` or `TINY_AGENT_MODEL`.
 Keys: `ZAI_API_KEY` (global) or `ZAI_CODING_CN_API_KEY` (China endpoint).
-Flags: `-p` prompt · `-m` model · `-t` thinking level · `-C` workspace · `--sidecar`.
+Flags: `-p` prompt · `-m` model · `-t` thinking level · `-C` workspace.
 REPL: Enter queues mid-run · Shift+Enter steers · Ctrl+C aborts (twice quits) · `/help`.
 
 ## Tools
@@ -44,31 +44,27 @@ under Node's `--permission` model (fs bounded to the workspace, no child
 processes, no network on Node ≥ 25). The docs tools are the only network
 traffic: outbound read-only fetches to context7.com.
 
-## Sidecar mode (--sidecar)
+## Why tool calls aren't gated by an LLM classifier
 
-While you compose, one debounced Jev request rates the draft: completion
-probability, intent, multi-idea detection, missing-file references, and a
-queue-vs-steer route suggestion. Assertions appear on the idle status row and
-retract on the next keystroke. When the draft settles, a plan is prerendered
-and shown dimmed — Enter submits your message with that plan attached, so the
-agent starts executing instead of exploring.
+Some agents check every tool call with a second LLM: "is this call safe?"
+tiny-agent doesn't, because a judgment is the wrong kind of answer:
 
-## Why the sidecar isn't an LLM classifier
+- **Non-deterministic.** The same call can pass and fail. A security boundary
+  that flip-flops is not a boundary.
+- **Uncalibrated.** The verdict is generated text, not a measured probability.
+  There is no honest threshold, and no way to test where the boundary actually
+  sits.
+- **Injectable.** The judge reads the same content an attacker controls — tool
+  arguments and the files they point at. The gate is made of the attack surface.
+- **Wrong question.** "Is this call safe?" depends on intent, which cannot be
+  read from a string. "What can this call affect, and can it be undone?" can be
+  answered by reading code.
 
-The common design puts a second LLM behind a prompt — "judge whether this draft
-is ready." tiny-agent doesn't, for four reasons:
-
-- an LLM classifier is non-deterministic: the same draft can pass and fail
-- its verdicts are uncalibrated text, so there is no honest threshold to set
-- its policy lives in prompt phrasing, which drifts with every edit
-- the judge is itself generative, injectable by the same content it judges
-
-The sidecar instead asks [Jev](https://docs.typesafe.ai) — a System One model
-trained for calibrated decisions — narrow yes/no and choice questions, and gets
-probabilities measured against outcomes. Policy is code: thresholds, gates, and
-one status line. Wrong guesses retract on the next keystroke, and real damage
-is bounded anyway: the sidecar is read-only, the main agent's writes are
-journaled, and `undo_run` reverts anything it did.
+So safety lives in the capability set, not in a verdict. Tools have fixed
+semantics and bounded scope: workspace-only paths, symlink-safe resolution,
+`run_ts` sandboxed at two independent layers, writes journaled and reversible
+with `undo_run`. The dangerous question — is this safe? — is replaced by one
+you can answer for yourself: read `src/tools.ts`, then decide.
 
 ## Layout
 
@@ -82,8 +78,7 @@ src/
   diff.ts           Myers O(ND) line diff + unified formatter
   fuzzy.ts          fzf-style fuzzy match scoring
   context7.ts       docs tools (context7.com, read-only)
-  repl.ts           fullscreen terminal UI + composer + sidecar wiring
-  sidecar.ts        Jev assertions (System One fan-out)
+  repl.ts           fullscreen terminal UI + composer + paste handling
   snapshots.ts      pre-run snapshots (undo_run, diff_run)
   journal.ts        per-edit journal (undo_last_edit, redo_last_edit)
   reversibility.ts  the four reversibility tools
